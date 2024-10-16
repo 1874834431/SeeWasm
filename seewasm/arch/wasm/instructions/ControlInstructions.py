@@ -127,7 +127,7 @@ class ControlInstructions:
         # get the callee's function signature
         target_func = analyzer.func_prototypes[f_offset]
         callee_func_name, param_str, return_str, _ = target_func
-
+        states=[]
         readable_callee_func_name = readable_internal_func_name(
             Configuration.get_func_index_to_func_name(),
             callee_func_name)
@@ -293,30 +293,134 @@ class ControlInstructions:
             # this instruction will pop an element out of the stack, and use this as an index in the table, i.e., elem section in Wasm module, to dynamically determine which fucntion will be invoked
             elem_index_to_func = Configuration.get_elem_index_to_func()
             concolic = state.type == 'concolic'
-            
-            # target function index
+            states = []
+            # elem_size = next((i for i, v in enumerate(elem_index_to_func[::-1]) if v != -1), None)
+
+            # 为每个函数生成唯一的分支
+            func_to_indices = defaultdict(list)
+            target_callee_type = int(
+                    self.instr_string.split(' ')[1][:-1])
+            for idx, possible_callee_op in enumerate(elem_index_to_func):
+                if possible_callee_op == -1:
+                    continue
+                possible_callee_type = analyzer.func_types[possible_callee_op - len(
+                        analyzer.imports_func)]
+                if possible_callee_type != target_callee_type:
+                    continue
+                func_to_indices[possible_callee_op].append(idx)
+
             op = state.symbolic_stack.pop()
             if not concolic:
-                op_con = state.concolic_stack.pop()
-            assert is_bv_value(
-                op), f"in call_indirect, op is a symbol ({op}), not support yet"
-            op = op.as_long()
-            elem_size= next((i for i, v in enumerate(elem_index_to_func[::-1]) if v != -1), None)
-            assert op >=0 and op < elem_size
-            
-            callee_func_offset = elem_index_to_func[op]
-            assert isinstance(callee_func_offset,int),f"error data type"
-            assert callee_func_offset<=len(analyzer.elements),f"callee_func_offset:{callee_func_offset} is out of range"
-            
-            callee_func_name =  Configuration.get_func_index_to_func_name()[callee_func_offset]
-            
-            state.call_indirect_callee = callee_func_name
-            
-            if callee_func_offset == -1:
-                exit("no valid callee in call_indirect")
+                # 如果 `op` 是符号值，进行符号化处理
+                if not is_bv_value(op):
+                    # 遍历每个函数，为每个函数生成唯一的分支
+                    for callee_func_offset, indices in func_to_indices.items():
+                        new_state = copy.deepcopy(state)
+                        # 对多个索引合并约束条件
+                        index_conditions = [simplify(op == i) for i in indices]
+                        if unsat == one_time_query_cache(state.solver, Or(index_conditions)):
+                            continue
+                        new_state.solver.add(Or(index_conditions))
+
+                        callee_func_name = Configuration.get_func_index_to_func_name()[callee_func_offset]
+                        new_state.call_indirect_callee = callee_func_name
+
+                        # 处理每个函数调用
+                        branch_states = self.deal_with_call(
+                            new_state, callee_func_offset, data_section, analyzer, lvar)
+                        states=states+branch_states
+
+                    # 处理 out-of-bounds 情况
+                    
+                    return states
+                else:
+                    # 如果 `op` 是具体值，使用原来的处理逻辑
+                    assert is_bv_value(op), f"in call_indirect, op is a symbol ({op}), not support yet"
+                    op = op.as_long()
+                    elem_size = [i for i, x in enumerate(elem_index_to_func) if x != -1][-1]+1
+                    assert op >= 0 and op < elem_size
+
+                    callee_func_offset = elem_index_to_func[op]
+                    assert isinstance(callee_func_offset, int), f"error data type"
+                    assert callee_func_offset <= len(analyzer.elements), f"callee_func_offset:{callee_func_offset} is out of range"
+
+                    callee_func_name = Configuration.get_func_index_to_func_name()[callee_func_offset]
+                    state.call_indirect_callee = callee_func_name
+
+                    if callee_func_offset == -1:
+                        exit("no valid callee in call_indirect")
+                    else:
+                        state= self.deal_with_call(
+                            state, callee_func_offset, data_section, analyzer, lvar)
+                        states.extend(state)
+                        return states
             else:
-                return self.deal_with_call(
-                    state, callee_func_offset, data_section, analyzer, lvar)
+                op_con = state.concolic_stack.pop()
+                op=op.as_long()
+                states = []
+                states.append(state)
+                tem_state = copy.deepcopy(state)
+                assert op >= 0 ,f"error callee index"
+                if is_bv_value(op_con):
+                    state = self.deal_with_call(
+                        state, callee_func_offset, data_section, analyzer, lvar)
+                    return states
+                # 遍历每个函数，为每个函数生成唯一的分支
+                for callee_func_offset, indices in func_to_indices.items():
+                    new_state = copy.deepcopy(tem_state)
+                    index_conditions = [simplify(op_con == i) for i in indices]
+                    if op in indices:
+                        callee_func_name = Configuration.get_func_index_to_func_name()[callee_func_offset]
+                        state.call_indirect_callee = callee_func_name
+                        state.solver.add(Or(index_conditions))
+                        state = self.deal_with_call(
+                        state, callee_func_offset, data_section, analyzer, lvar)
+                        if isinstance(state, list):
+                            states[0]=state[0]
+                            states=states+state[1:]
+                    else:
+                        # 对多个索引合并约束条件
+                        
+                        if unsat == one_time_query_cache(new_state.solver, Or(index_conditions)):
+                            continue
+                        new_state.solver.add(Or(index_conditions))
+                        callee_func_name = Configuration.get_func_index_to_func_name()[callee_func_offset]
+                        new_state.call_indirect_callee = callee_func_name
+
+                        # 处理每个函数调用
+                        new_states = self.deal_with_call(
+                            new_state, callee_func_offset, data_section, analyzer, lvar)
+                        if not isinstance(new_states, list):
+                            new_states = [new_states]
+                        # states=states+branch_states
+                        states.extend(new_states)
+
+                # 处理 out-of-bounds 情况
+
+                return states
+            # target function index
+            # op = state.symbolic_stack.pop()
+            # if not concolic:
+            #     op_con = state.concolic_stack.pop()
+            # assert is_bv_value(
+            #     op), f"in call_indirect, op is a symbol ({op}), not support yet"
+            # op = op.as_long()
+            # elem_size= next((i for i, v in enumerate(elem_index_to_func[::-1]) if v != -1), None)
+            # assert op >=0 and op < elem_size
+            
+            # callee_func_offset = elem_index_to_func[op]
+            # assert isinstance(callee_func_offset,int),f"error data type"
+            # assert callee_func_offset<=len(analyzer.elements),f"callee_func_offset:{callee_func_offset} is out of range"
+            
+            # callee_func_name =  Configuration.get_func_index_to_func_name()[callee_func_offset]
+            
+            # state.call_indirect_callee = callee_func_name
+            
+            # if callee_func_offset == -1:
+            #     exit("no valid callee in call_indirect")
+            # else:
+            #     return self.deal_with_call(
+            #         state, callee_func_offset, data_section, analyzer, lvar)
         elif self.instr_name == 'br_table':
             # state.instr.xref indicates the destination instruction's offset
             # TODO examine br_table
@@ -337,6 +441,7 @@ class ControlInstructions:
             if state.type == 'concolic':
                 op_sym = state.concolic_stack.pop()
                 op = op.as_long()
+                state_tem = copy.deepcopy(state)
                 if(op>=n_br or op<0):
                     state.edge_type = "conditional_false_0"
                     state.solver.add(simplify(Or(op_sym >= n_br, op_sym < 0)))
@@ -344,7 +449,7 @@ class ControlInstructions:
                 
                 for target, index_list in target_branch2index.items():
                     if op in index_list:
-                        new_state= copy.deepcopy(state)
+                        new_state= copy.deepcopy(state_tem)
                         new_state.edge_type = f"conditional_false_0"
                         new_state.solver.add(simplify(Or(op_sym >= n_br, op_sym < 0)))
                         states.append(new_state)
@@ -355,7 +460,7 @@ class ControlInstructions:
 
                         
                     else:
-                        new_state= copy.deepcopy(state)
+                        new_state= copy.deepcopy(state_tem)
                         new_state.edge_type = f"conditional_true_{target}"
                         index_list = [simplify(op_sym == i) for i in index_list]
                         new_state.solver.add(simplify(Or(index_list)))
@@ -406,3 +511,4 @@ class ControlInstructions:
                 state, f_offset, data_section, analyzer, lvar)
         else:
             raise UnsupportInstructionError
+

@@ -1,17 +1,62 @@
 digraph "wasm_ICFG.gv" {
 	rankdir=TB
 	subgraph global {
-		block_2_7
-		block_2_8
-		block_2_7 -> block_2_8
-		block_1_0
-		block_1_6
-		block_1_0 -> block_1_6
+		block_3_5f
+		block_3_65
+		block_3_5f -> block_3_65
+		block_3_1f
+		block_3_27
+		block_3_1f -> block_3_27
+		block_0_6
+		block_2_9
+		block_0_6 -> block_2_9
+		block_3_27
+		block_3_53
+		block_3_27 -> block_3_53
+		block_3_4b
+		block_3_53
+		block_3_4b -> block_3_53
+		block_3_41
+		block_3_53
+		block_3_41 -> block_3_53
+		block_2_9
+		block_2_a
+		block_2_9 -> block_2_a
+		block_3_53
+		block_2_0
+		block_3_53 -> block_2_0
+		block_3_0
+		block_3_1d
+		block_3_0 -> block_3_1d
+		block_0_0
+		block_0_6
+		block_0_0 -> block_0_6
+		block_2_a
+		block_3_5f
+		block_2_a -> block_3_5f
 		block_2_0
 		block_1_0
 		block_2_0 -> block_1_0
-		block_1_6
-		block_2_7
-		block_1_6 -> block_2_7
+		block_3_0
+		block_3_1f
+		block_3_0 -> block_3_1f
+		block_2_0
+		block_0_0
+		block_2_0 -> block_0_0
+		block_3_1d
+		block_3_27
+		block_3_1d -> block_3_27
+		block_3_27
+		block_3_4b
+		block_3_27 -> block_3_4b
+		block_3_27
+		block_3_41
+		block_3_27 -> block_3_41
+		block_1_0
+		block_1_c
+		block_1_0 -> block_1_c
+		block_1_c
+		block_2_9
+		block_1_c -> block_2_9
 	}
 }

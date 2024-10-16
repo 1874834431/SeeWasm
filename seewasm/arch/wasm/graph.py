@@ -715,7 +715,7 @@ class Graph:
             return not_same_edge or cls.sat_cut(state.solver)
 
         if state.call_indirect_callee:
-            if not is_modeled(state.call_indirect_callee):
+            if  not  is_modeled(state.call_indirect_callee):##？？？
                 pass
             else:
                 # if the callee is not modeled
@@ -910,8 +910,7 @@ class Graph:
         def update_state(state):
             m = state.solver.model()
             
-            for k in m: #k sym_arg1 m[k] int 
-                # argsize = m[k].size() // 8 + 1
+            for k in m: 
                 newarg = BitVecVal(m[k].as_long(), 32)
                 for index,arg in enumerate(state.args_conco):
                     if str(arg) == str(k):
@@ -923,7 +922,7 @@ class Graph:
                     new_expr = replace_constants(expr,state.arg_map)
                     s = Solver()
                     if s.check() == sat:
-                        model = s.model()
+                        model = s.model()  
                         result = model.eval(new_expr)
                         print(f"结果为: {result}")
                     else:
@@ -952,6 +951,8 @@ class Graph:
             current_states = [current_state]
             new_states=[]
             while True:
+                if current_states[0].current_bb_name:
+                    current_bb=current_states[0].current_bb_name
                 succs_list = cls.bbs_graph[current_bb].items()# 当前块的后继块
                 halt_flag = False
                 try: 
@@ -964,7 +965,7 @@ class Graph:
                         write_result(current_states[0], exit=True)
                         break
                 if len(list(succs_list)) == 1:
-                    current_bb = list(succs_list)[0][1]
+                    current_states[0].current_bb_name = list(succs_list)[0][1]
                 elif len(list(succs_list)) == 0:
                     if readable_internal_func_name(
                         Configuration.get_func_index_to_func_name(),
@@ -972,17 +973,21 @@ class Graph:
                         write_result(current_states[0])
                     break
                 else: 
-                    for edge_type, next_block in succs_list:
-                        if edge_type == current_states[0].edge_type:
-                            current_bb = next_block
-                        for new_state in current_states[1:]:
-                            if(new_state.edge_type == edge_type):
+                    for new_state in current_states:
+                        if new_state.edge_type!='':
+                            for edge_type, next_block in succs_list:
+                             if new_state.edge_type== edge_type:
                                 new_state.current_bb_name = next_block
                                 new_state.edge_type = ''
                                 new_state.call_indirect_callee = ''
-                current_states[0].current_bb_name = ''
-                current_states[0].edge_type = ''
-                current_states[0].call_indirect_callee = ''
+                        if new_state.call_indirect_callee:
+                            if new_state.current_func_name in cls.func_to_bbs:
+                                bbs = cls.func_to_bbs[new_state.current_func_name]
+                                if bbs:
+                                    new_state.current_bb_name = bbs[0]
+                            assert new_state.current_bb_name !=''
+                            new_state.edge_type = ''
+                            new_state.call_indirect_callee = ''
                 new_states.extend(current_states[1:])
                 current_states=[current_states[0]]
                 
@@ -991,14 +996,36 @@ class Graph:
         
 
         final_states = defaultdict(list)   
-        if state.current_func_name=='$func1':
-            concre_var=state.args[1] if isinstance(state.args[1],int) else int(state.args[1])
-            concre_var=BitVecVal(concre_var, 32)
-            sym_var=state.args_conco[0]
-            if (sym_var.size()!=32):
-                sym_var =  SignExt(16, sym_var)
-            state.local_var[0]=concre_var
-            state.local_var_concolic[0]=sym_var
+        # 传入参数
+        for i, (arg, arg_conco) in enumerate(zip(state.args[1:], state.args_conco), start=0):
+            # 处理具体值
+            if isinstance(arg, int):
+                concre_var = arg
+            else:
+                try:
+                    concre_var = int(arg)
+                except ValueError:
+                    # 如果无法转换为整数，保持原值
+                    concre_var = arg
+            
+            concre_var = BitVecVal(concre_var, 32)
+            
+            # 处理符号值
+            sym_var = arg_conco
+            if sym_var.size() != 32:
+                sym_var = SignExt(32 - sym_var.size(), sym_var)
+            
+            # 将处理后的值存入local_var和local_var_concolic
+            state.local_var[i] = concre_var
+            state.local_var_concolic[i] = sym_var
+
+        # concre_var=state.args[1] if isinstance(state.args[1],int) else int(state.args[1])
+        # concre_var=BitVecVal(concre_var, 32)
+        # sym_var=state.args_conco[0]
+        # if (sym_var.size()!=32):
+        #     sym_var =  SignExt(16, sym_var)
+        # state.local_var[0]=concre_var
+        # state.local_var_concolic[0]=sym_var
 
         cancidate_states=[]
         while True:

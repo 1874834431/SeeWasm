@@ -1,0 +1,37 @@
+states = []
+# 构建函数表
+creat_func_to_indices() 
+op = state.symbolic_stack.pop().as_long()
+op_con = state.concolic_stack.pop()
+assert table[op] !=-1
+# 遍历每个函数，为每个函数生成唯一的分支
+for callee_func_offset, indices in func_to_indices.items():
+    new_state = copy.deepcopy(state)
+    index_conditions = [simplify(op_con == i) for i in indices]
+    if op in indices:
+        state.process_function_call(callee_func_offset)
+        states.append(state)
+    else:
+        if unsat == one_time_query_cache(state.solver, Or(index_conditions)):
+            continue
+        new_state.process_function_call(callee_func_offset)
+        states.append(new_state)
+return states
+获取模型 (m = state.solver.model()):
+
+通过求解器 (state.solver) 获取当前的模型 m。模型 m 包含了符号变量（如 sym_arg1）及其求解出的具体值（如 int）。
+更新参数值:
+
+遍历模型中的每个键 k，即符号变量（例如 sym_arg1）。
+对于每个符号变量 k，提取其对应的值 m[k]，并将其转换为 32 位的具体值 newarg。
+代码然后查找 state.args_conco（包含符号参数）中与 k 对应的参数，将对应的参数值更新为 newarg，并更新 state.args_map。
+表达式剪枝:
+
+代码接下来处理 state.concolic_stack 中的表达式。该栈保存了当前的符号表达式。
+如果表达式 expr 是一个符号变量（is_bv(expr)) 且没有具体值（not is_bv_value(expr)），则代码将其替换为具体值。
+replace_constants(expr,state.arg_map) 用于将表达式中的符号变量替换为对应的具体值（在 state.arg_map 中映射）。
+求解表达式:
+
+新建一个求解器 s，并检查替换后的表达式 new_expr 是否可以求解（即 s.check() 是否返回 sat）。
+如果求解器返回 sat（表示求解成功），则获取模型 model 并对表达式求值 result，将结果输出并存储在 state.stack 中。
+如果表达式无法求解（即 s.check() 返回 unsat），则输出无法求解的消息。
