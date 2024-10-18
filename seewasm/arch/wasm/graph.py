@@ -909,25 +909,27 @@ class Graph:
 
         def update_state(state):
             m = state.solver.model()
-            
-            for k in m: 
-                newarg = BitVecVal(m[k].as_long(), 32)
-                for index,arg in enumerate(state.args_conco):
+            for index,arg in enumerate(state.args_conco):
+                for k in m: 
                     if str(arg) == str(k):
+                        newarg = BitVecVal(m[k].as_long(), arg.size())
                         state.args[index+1] = newarg
                         state.args_map[arg] = newarg
+                        print(f"new input {str(arg)}: {newarg} ")
+           
+            print('\n')
             # todo :剪枝
             for index,expr in enumerate(state.concolic_stack):
                 if (is_bv(expr) and not is_bv_value(expr)):
-                    new_expr = replace_constants(expr,state.arg_map)
+                    new_expr = replace_constants(expr,state.args_map)
                     s = Solver()
                     if s.check() == sat:
                         model = s.model()  
                         result = model.eval(new_expr)
-                        print(f"结果为: {result}")
+                        # print(f"结果为: {result}")
                     else:
                         print("无法求解该表达式。")
-                    state.stack[index] = result
+                    state.symbolic_stack[index] = result
             for key,expr in state.local_var_concolic.items():
                 if (is_bv(expr) and (not is_bv_value(expr))):
                     new_expr = replace_constants(expr,state.args_map)
@@ -935,7 +937,7 @@ class Graph:
                     if s.check() == sat:
                         model = s.model()
                         result = model.eval(new_expr)
-                        print(f"new input: {result}")
+                        
                     else:
                         print("无法求解该表达式。")
                     state.local_var[key] = result
@@ -946,13 +948,16 @@ class Graph:
             # 
             if current_state.current_bb_name == '':
                 current_bb = entry
+                current_state.bb_trace.append(current_bb)
             else:
                 current_bb = current_state.current_bb_name
+            
             current_states = [current_state]
             new_states=[]
             while True:
                 if current_states[0].current_bb_name:
                     current_bb=current_states[0].current_bb_name
+                    current_state.bb_trace.append(current_bb)
                 succs_list = cls.bbs_graph[current_bb].items()# 当前块的后继块
                 halt_flag = False
                 try: 
@@ -998,34 +1003,9 @@ class Graph:
         final_states = defaultdict(list)   
         # 传入参数
         for i, (arg, arg_conco) in enumerate(zip(state.args[1:], state.args_conco), start=0):
-            # 处理具体值
-            if isinstance(arg, int):
-                concre_var = arg
-            else:
-                try:
-                    concre_var = int(arg)
-                except ValueError:
-                    # 如果无法转换为整数，保持原值
-                    concre_var = arg
-            
-            concre_var = BitVecVal(concre_var, 32)
-            
-            # 处理符号值
-            sym_var = arg_conco
-            if sym_var.size() != 32:
-                sym_var = SignExt(32 - sym_var.size(), sym_var)
-            
-            # 将处理后的值存入local_var和local_var_concolic
-            state.local_var[i] = concre_var
-            state.local_var_concolic[i] = sym_var
+            state.local_var[i] = arg
+            state.local_var_concolic[i] = arg_conco
 
-        # concre_var=state.args[1] if isinstance(state.args[1],int) else int(state.args[1])
-        # concre_var=BitVecVal(concre_var, 32)
-        # sym_var=state.args_conco[0]
-        # if (sym_var.size()!=32):
-        #     sym_var =  SignExt(16, sym_var)
-        # state.local_var[0]=concre_var
-        # state.local_var_concolic[0]=sym_var
 
         cancidate_states=[]
         while True:
@@ -1040,6 +1020,25 @@ class Graph:
             state=cancidate_states[idx]
             cancidate_states=cancidate_states[idx+1:]
             state = update_state(state)
+        seen = set()
+        duplicates = set()
+
+        for state in final_states['return']:
+            trace_tuple = tuple(state.bb_trace)  # 将列表转换为元组以便于存储在集合中
+            if trace_tuple in seen:
+                duplicates.add(trace_tuple)  # 如果已经见过，添加到重复集合
+            else:
+                seen.add(trace_tuple)  # 否则，添加到已见集合
+
+        # 输出结果
+        if duplicates:
+            print("发现重复的 trace 数组:")
+            for dup in duplicates:
+                print(list(dup))  # 将元组转换回列表输出
+        else:
+            print("没有发现重复的 trace 数组。")
+        print(len(final_states['return']))
+        return final_states
             
 
     @ classmethod
@@ -1053,17 +1052,15 @@ class Graph:
         # cls.find_cycles(entry, icfg_cycles)
         # vis_start_bb.add(entry)
         # print(icfg_cycles)
-        if state.current_func_name=='$func1':
-            if is_bv(state.args[1]) or is_bv_value(state.args[1]):
-                state.local_var[0]=state.args[1]
-            else:
-                concre_var=state.args[1] if isinstance(state.args[1],int) else int(state.args[1])
-                concre_var=BitVecVal(concre_var, 32 )
-                state.local_var[0]=concre_var
+        for i, arg in enumerate(state.args[1:]):
+            state.local_var[i] = arg
+
         def consumer(item):
             (current_bb, current_states) = item  #当前块与当前的状态
             succs_list = cls.bbs_graph[current_bb].items()# 当前块的后继块
             halt_flag = False
+            for state in current_states:
+                state.bb_trace.append(current_bb)
             try: 
                 emul_states = cls.wasmVM.emulate_basic_block(
                     current_states, cls.bb_to_instructions[current_bb])#在当前state 模拟该bb，可能产出多个state
@@ -1110,8 +1107,25 @@ class Graph:
                         Configuration.get_func_index_to_func_name(),
                         item.current_func_name) == Configuration.get_entry():
                     write_result(item)
-
             final_states['return'].extend(emul_states)
             if halt_flag:
                 break
+        seen = set()
+        duplicates = set()
+        for state in final_states['return']:
+            trace_tuple = tuple(state.bb_trace)  # 将列表转换为元组以便于存储在集合中
+            if trace_tuple in seen:
+                duplicates.add(trace_tuple)  # 如果已经见过，添加到重复集合
+            else:
+                seen.add(trace_tuple)  # 否则，添加到已见集合
+
+        # 输出结果
+        if duplicates:
+            print("发现重复的 trace 数组:")
+            for dup in duplicates:
+                print(list(dup))  # 将元组转换回列表输出
+        else:
+            print("没有发现重复的 trace 数组。")
+        print(len(final_states['return']))
+        
         return final_states

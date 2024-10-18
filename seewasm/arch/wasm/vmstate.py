@@ -34,6 +34,7 @@ class WasmVMstate(VMstate):
         self.current_func_name = ''
         # current basic block's name, used in recursive process
         self.current_bb_name = ''
+        self.bb_trace=[]
         # keep the operator and its speculated sign
         self.sign_mapping = defaultdict(bool)
         # context stack

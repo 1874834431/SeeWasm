@@ -437,15 +437,15 @@ class ControlInstructions:
             #2 1 0 3 
             # construct possible state
             states = []
-            states.append(state)
+            
             if state.type == 'concolic':
+                states.append(state)
                 op_sym = state.concolic_stack.pop()
                 op = op.as_long()
                 state_tem = copy.deepcopy(state)
                 if(op>=n_br or op<0):
                     state.edge_type = "conditional_false_0"
                     state.solver.add(simplify(Or(op_sym >= n_br, op_sym < 0)))
-                    states.append(state)
                 
                 for target, index_list in target_branch2index.items():
                     if op in index_list:

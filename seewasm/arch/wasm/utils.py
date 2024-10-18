@@ -233,6 +233,9 @@ def write_result(state, exit=False):
                 # tmp_dict["output"] = f'{b"".join(output_buffer)}'
                 tmp_dict["output"] = "".join(output_solve_buffer)
                 state_result["Output"].append(tmp_dict)
+                state_result["trace"] = []
+                for bb in state.bb_trace:
+                    state_result["trace"].append(bb)
         elif state.type == 'concolic':
             state_result["Solution"] = {}
             #state_result["Solution"]["sym_arg1"]= state.args[1]
@@ -273,6 +276,9 @@ def write_result(state, exit=False):
                 # tmp_dict["output"] = f'{b"".join(output_buffer)}'
                 tmp_dict["output"] = "".join(output_solve_buffer)
                 state_result["Output"].append(tmp_dict)
+            state_result["trace"] = []
+            for bb in state.bb_trace:
+                state_result["trace"].append(bb)
         json.dump(state_result, fp, indent=4)
 
 

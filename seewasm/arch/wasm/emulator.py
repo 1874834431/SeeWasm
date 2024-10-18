@@ -302,7 +302,28 @@ class WasmSSAEmulatorEngine(EmulatorEngine):
                 raise UnsupportGlobalTypeError
             state.globals[i] = op_val
 
+    
+
     def init_state(self, func_name, param_str):
+        def get_bit_size(param_type):
+            if param_type == 'i32' or param_type == 'f32':
+                return 32
+            elif param_type == 'i64' or param_type == 'f64':
+                return 64
+            elif param_type == 'v128':
+                return 128
+            else:
+                raise ValueError(f"Unsupported parameter type: {param_type}")
+
+        def check_value_range(value, bit_size):
+            if bit_size == 32:
+                return -2**31 <= value < 2**31
+            elif bit_size == 64:
+                return -2**63 <= value < 2**63
+            elif bit_size == 128:
+                return -2**127 <= value < 2**127
+            else:
+                raise ValueError(f"Unsupported bit size: {bit_size}")
         state = WasmVMstate()
 
         # update file sys
@@ -315,14 +336,27 @@ class WasmSSAEmulatorEngine(EmulatorEngine):
         state.args = args
         # copy the args to concolic args
         if Configuration.get_execution_mode()=='concolic':
-            for i, arg in enumerate(args):
-                if i==0:
-                    continue
-                if(len(arg)<=8):
-                    state.args_conco.append(BitVec(f"sym_arg_{i}",32))
-                else:
-                    state.args_conco.append(BitVec(f"sym_arg_{i}",64))
-                state.args_map[state.args_conco[i-1]] = state.args[i]
+            param_types = param_str.split()
+            for i, (arg, param_type) in enumerate(zip(args[1:], param_types)):
+                bit_size = get_bit_size(param_type)
+                try:
+                    arg_value = int(arg)
+                except ValueError:
+                    raise ValueError(f"Argument {i} ({arg}) is not a valid integer")
+
+                if not check_value_range(arg_value, bit_size):
+                    raise ValueError(f"Argument {i} ({arg_value}) is out of range for {param_type}")
+
+                state.args_conco.append(BitVec(f"sym_arg_{i}", bit_size))
+                state.args[i+1] = BitVecVal(arg_value, bit_size)
+                
+                if param_type in ['f32', 'f64']:
+                    if param_type == 'f32':
+                        float_value = struct.unpack('!f', struct.pack('!I', arg_value))[0]
+                    else:  # f64
+                        float_value = struct.unpack('!d', struct.pack('!Q', arg_value))[0]
+                    state.args[i+1] = BitVecVal(float_value, bit_size)
+                state.args_map[state.args_conco[i]] = state.args[i+1]
 
         if param_str != '':
              #TODO alert: deal with local variables 
