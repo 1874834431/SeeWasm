@@ -981,10 +981,10 @@ class Graph:
                     for new_state in current_states:
                         if new_state.edge_type!='':
                             for edge_type, next_block in succs_list:
-                             if new_state.edge_type== edge_type:
-                                new_state.current_bb_name = next_block
-                                new_state.edge_type = ''
-                                new_state.call_indirect_callee = ''
+                                if new_state.edge_type == edge_type:
+                                    new_state.current_bb_name = next_block
+                                    new_state.edge_type = ''
+                                    new_state.call_indirect_callee = ''
                         if new_state.call_indirect_callee:
                             if new_state.current_func_name in cls.func_to_bbs:
                                 bbs = cls.func_to_bbs[new_state.current_func_name]
@@ -1014,11 +1014,16 @@ class Graph:
 
             if(len(cancidate_states)==0):
                 break
-            for idx, state in enumerate(cancidate_states):
+            idx = -1
+            for i, state in enumerate(cancidate_states):
                 if sat == state.solver.check():
+                    idx=i
                     break
+            if idx==-1:
+                break
             state=cancidate_states[idx]
             cancidate_states=cancidate_states[idx+1:]
+            
             state = update_state(state)
         seen = set()
         duplicates = set()

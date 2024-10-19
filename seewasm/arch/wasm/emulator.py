@@ -357,7 +357,31 @@ class WasmSSAEmulatorEngine(EmulatorEngine):
                         float_value = struct.unpack('!d', struct.pack('!Q', arg_value))[0]
                     state.args[i+1] = BitVecVal(float_value, bit_size)
                 state.args_map[state.args_conco[i]] = state.args[i+1]
+        else:
+            param_types = param_str.split()
+            for i, (arg, param_type) in enumerate(zip(args[1:], param_types)):
+                bit_size = get_bit_size(param_type)
+                if is_bv(arg):
+                    assert arg.size()==bit_size,"error length"
+                    state.args[i+1]=arg
 
+                else:
+                    try:
+                        arg_value = int(arg)
+                    except ValueError:
+                        raise ValueError(f"Argument {i} ({arg}) is not a valid integer")
+
+                    if not check_value_range(arg_value, bit_size):
+                        raise ValueError(f"Argument {i} ({arg_value}) is out of range for {param_type}")
+
+                    state.args[i+1] = BitVecVal(arg_value, bit_size)
+                    
+                if param_type in ['f32', 'f64']:
+                    if param_type == 'f32':
+                        float_value = struct.unpack('!f', struct.pack('!I', arg_value))[0]
+                    else:  # f64
+                        float_value = struct.unpack('!d', struct.pack('!Q', arg_value))[0]
+                    state.args[i+1] = BitVecVal(float_value, bit_size)
         if param_str != '':
              #TODO alert: deal with local variables 
             for i, local in enumerate(param_str.split(' ')):

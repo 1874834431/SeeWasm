@@ -117,7 +117,8 @@ def main():
         # run the emulator for SSA
         Graph.wasmVM = wasmVM
         Graph.initialize()
-        Configuration.set_elem_index_to_func(wasmVM.ana.elements,wasmVM.ana.tables[0]['limits_initial'])
+        if wasmVM.ana.elements!=[]:
+            Configuration.set_elem_index_to_func(wasmVM.ana.elements,wasmVM.ana.tables[0]['limits_initial'])
         # draw the ICFG on basic block level, and exit
         if Configuration.get_visualize():
             # draw here
